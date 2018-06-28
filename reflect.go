@@ -255,6 +255,12 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, t reflect.Type)
 		return &Type{Type: "string", Format: "ipv4"} // ipv4 RFC section 7.3.4
 	}
 
+	// Override type definition
+	verrideType := r.overrideTypeDefinition(t)
+	if verrideType != nil {
+		return verrideType
+	}
+
 	switch t.Kind() {
 	case reflect.Struct:
 
@@ -324,6 +330,24 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, t reflect.Type)
 		return r.reflectTypeToSchema(definitions, t.Elem())
 	}
 	panic("unsupported type " + t.String())
+}
+
+func (r *Reflector) overrideTypeDefinition(t reflect.Type) *Type {
+	if r.Overrides != nil {
+		jsonType, tag := r.Overrides.GetStructType(t)
+		if jsonType != "" {
+			if jsonTypeErr := validateJsonType(jsonType); jsonTypeErr != nil {
+				return nil
+			}
+			typeDefinition := &Type{Type: jsonType}
+			if typeDefinition.Type == "" {
+				return nil
+			}
+			typeDefinition.structKeywordsFromTags(strings.Split(tag, ","))
+			return typeDefinition
+		}
+	}
+	return nil
 }
 
 // Refects a struct to a JSON Schema type.
