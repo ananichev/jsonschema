@@ -151,6 +151,23 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	return s
 }
 
+// Returns description of field
+func (r *Reflector) getFieldDescription(t reflect.StructField) string {
+	return t.Tag.Get("jsonschema-description")
+}
+
+func (r *Reflector) getStructDescription(t reflect.Type) string {
+	if t.Kind() == reflect.Struct {
+		for field := 0; field < t.NumField(); field++ {
+			tag := t.Field(field).Tag.Get("jsonschema-object-description")
+			if tag != "" {
+				return tag
+			}
+		}
+	}
+	return ""
+}
+
 // Definitions hold schema definitions.
 // http://json-schema.org/latest/json-schema-validation.html#rfc.section.5.26
 // RFC draft-wright-json-schema-validation-00, section 5.26
@@ -411,6 +428,7 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, t ref
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+	st.Description = r.getStructDescription(t)
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		// anonymous and exported type should be processed recursively
@@ -426,6 +444,7 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, t ref
 		}
 		property := r.reflectTypeToSchema(definitions, f.Type)
 		property.structKeywordsFromTags(r.getJSONSchemaTags(f, t))
+		property.Description = r.getFieldDescription(f)
 		st.Properties[name] = property
 		if required {
 			st.Required = append(st.Required, name)
