@@ -112,6 +112,9 @@ type Reflector struct {
 	// default of requiring any key *not* tagged with `json:,omitempty`.
 	RequiredFromJSONSchemaTags bool
 
+	// When this option is true for pointers within schema will not be required.
+	PtrFieldsIsOptional bool
+
 	// ExpandedStruct will cause the toplevel definitions of the schema not
 	// be referenced itself to a definition.
 	ExpandedStruct bool
@@ -671,6 +674,10 @@ func (r *Reflector) reflectFieldName(f reflect.StructField, t reflect.Type) (str
 
 	if r.RequiredFromJSONSchemaTags {
 		required = requiredFromJSONSchemaTags(jsonSchemaTags)
+	} else if r.PtrFieldsIsOptional {
+		if f.Type.Kind() == reflect.Ptr {
+			required = false
+		}
 	}
 
 	if jsonTags[0] != "" {
