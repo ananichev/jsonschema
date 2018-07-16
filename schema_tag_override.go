@@ -29,17 +29,17 @@ func GetSchemaTagOverride() SchemaTagOverride {
 	c := make(map[reflect.Type]map[string]string)
 	structConfig := make(map[reflect.Type]string)
 	structTypesConfig := make(map[reflect.Type]string)
-	return &overrides{config: c, structConfig: structConfig, structTypesConfig: structTypesConfig}
+	return &schemaTagOverrides{config: c, structConfig: structConfig, structTypesConfig: structTypesConfig}
 }
 
-type overrides struct {
-	config map[reflect.Type]map[string]string
-	structConfig map[reflect.Type]string
+type schemaTagOverrides struct {
+	config            map[reflect.Type]map[string]string
+	structConfig      map[reflect.Type]string
 	structTypesConfig map[reflect.Type]string
 }
 
 // Set adds a jsonschema tag override to internal map
-func (o *overrides) Set(targetStruct interface{}, targetField string, tag string) error {
+func (o *schemaTagOverrides) Set(targetStruct interface{}, targetField string, tag string) error {
 	ts := reflect.TypeOf(targetStruct)
 
 	if k := ts.Kind(); k != reflect.Struct {
@@ -62,7 +62,7 @@ func (o *overrides) Set(targetStruct interface{}, targetField string, tag string
 }
 
 // Get retrieves tags from internal map
-func (o *overrides) Get(targetStructType reflect.Type, targetField string) string {
+func (o *schemaTagOverrides) Get(targetStructType reflect.Type, targetField string) string {
 	if targetStructType.Kind() != reflect.Struct {
 		return ""
 	}
@@ -74,9 +74,8 @@ func (o *overrides) Get(targetStructType reflect.Type, targetField string) strin
 	return o.config[targetStructType][targetField]
 }
 
-
 // Set adds a jsonschema tag override struct usage
-func (o *overrides) SetStructType(targetStruct interface{}, structType string, tag string) error {
+func (o *schemaTagOverrides) SetStructType(targetStruct interface{}, structType string, tag string) error {
 	if jsonTypeErr := validateJsonType(structType); jsonTypeErr != nil {
 		return jsonTypeErr
 	}
@@ -87,6 +86,6 @@ func (o *overrides) SetStructType(targetStruct interface{}, structType string, t
 }
 
 // Get is used by this library to retrieve overrides struct types where they are used
-func (o *overrides) GetStructType(targetStructType reflect.Type) (string, string) {
+func (o *schemaTagOverrides) GetStructType(targetStructType reflect.Type) (string, string) {
 	return o.structTypesConfig[targetStructType], o.structConfig[targetStructType]
 }

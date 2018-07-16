@@ -124,6 +124,11 @@ type Reflector struct {
 	// For example a shared nested struct with field `Species` and tag `enum=Human|Dog|Alien` may be used by
 	// applications that want to declare a stricter tag `required,enum=Dog`
 	Overrides SchemaTagOverride
+
+	// Overrides interface implementations for specified types
+	// The expected use case is for custom object validation,
+	// when you need to override the behavior of interfaces such as Enum, AndOneOf, OneOf, IfThenElse, SchemaCase
+	InterfaceOverrides InterfaceOverride
 }
 
 // Reflect reflects to Schema from a value.
@@ -200,7 +205,7 @@ type protoEnum interface {
 //    { "multipleOf": 3 }
 //  ]
 //}
-type andOneOf interface {
+type AndOneOf interface {
 	AndOneOf() []reflect.StructField
 }
 
@@ -211,7 +216,7 @@ type andOneOf interface {
 //    { "type": "number", "multipleOf": 3 }
 //  ]
 // }
-type oneOf interface {
+type OneOf interface {
 	OneOf() []reflect.StructField
 }
 
@@ -221,19 +226,19 @@ type oneOf interface {
 //    "then": { "required": [ "disbelief" ] },
 //    "else": { "required": [ "confidence" ] }
 // }
-type ifThenElse interface {
+type IfThenElse interface {
 	IfThenElse() SchemaCondition
 }
 
-type schemaCase interface {
+type SchemaCase interface {
 	Case() SchemaSwitch
 }
 
 var protoEnumType = reflect.TypeOf((*protoEnum)(nil)).Elem()
-var andOneOfType = reflect.TypeOf((*andOneOf)(nil)).Elem()
-var oneOfType = reflect.TypeOf((*oneOf)(nil)).Elem()
-var ifThenElseType = reflect.TypeOf((*ifThenElse)(nil)).Elem()
-var schemaCaseType = reflect.TypeOf((*schemaCase)(nil)).Elem()
+var andOneOfType = reflect.TypeOf((*AndOneOf)(nil)).Elem()
+var oneOfType = reflect.TypeOf((*OneOf)(nil)).Elem()
+var ifThenElseType = reflect.TypeOf((*IfThenElse)(nil)).Elem()
+var schemaCaseType = reflect.TypeOf((*SchemaCase)(nil)).Elem()
 
 func (r *Reflector) reflectTypeToSchema(definitions Definitions, t reflect.Type) (schema *Type) {
 	// Already added to definitions?
@@ -251,17 +256,15 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, t reflect.Type)
 	}
 
 	// Return only oneOf array when OneOf() is implemented
-	if t.Implements(oneOfType) {
-		s := reflect.New(t).Interface().(oneOf).OneOf()
-		return &Type{OneOf: r.getOneOfList(definitions, s)}
+	if oneOfImpl := r.getOneOfImpl(t); oneOfImpl != nil {
+		return &Type{OneOf: r.getOneOfList(definitions, oneOfImpl.OneOf())}
 	}
 
 	// Append oneOf array to existing non-object type when AndOneOf() is implemented
 	defer func() {
 		if t.Kind() != reflect.Struct {
-			if t.Implements(andOneOfType) {
-				s := reflect.New(t).Interface().(andOneOf).AndOneOf()
-				schema.OneOf = r.getOneOfList(definitions, s)
+			if andOneOfImpl := r.getAndOneOfImpl(t); andOneOfImpl != nil {
+				schema.OneOf = r.getOneOfList(definitions, andOneOfImpl.AndOneOf())
 			}
 		}
 	}()
@@ -380,9 +383,8 @@ func (r *Reflector) reflectStruct(definitions Definitions, t reflect.Type) *Type
 	packageName := getPackageNameFromPath(t.PkgPath())
 	definitions[packageName+"."+t.Name()] = st
 	r.reflectStructFields(st, definitions, t)
-	if t.Implements(ifThenElseType) {
-		condition := reflect.New(t).Interface().(ifThenElse).IfThenElse()
-		r.reflectCondition(definitions, condition, st)
+	if ifThenElseImpl := r.getIfThenElseImpl(t); ifThenElseImpl != nil {
+		r.reflectCondition(definitions, ifThenElseImpl.IfThenElse(), st)
 	}
 
 	return &Type{
@@ -455,15 +457,65 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, t ref
 
 	}
 	// Append oneOf array to existing object type when AndOneOf() is implemented
-	if t.Implements(andOneOfType) {
-		s := reflect.New(t).Interface().(andOneOf).AndOneOf()
-		st.OneOf = r.getOneOfList(definitions, s)
+	if andOneOfImpl := r.getAndOneOfImpl(t); andOneOfImpl != nil {
+		st.OneOf = r.getOneOfList(definitions, andOneOfImpl.AndOneOf())
 	}
 
-	if t.Implements(schemaCaseType) {
-		schemaSwitch := reflect.New(t).Interface().(schemaCase).Case()
-		st.OneOf = r.reflectCases(definitions, schemaSwitch)
+	if schemaCaseImpl := r.getSchemaCaseImpl(t); schemaCaseImpl != nil {
+		st.OneOf = r.reflectCases(definitions, schemaCaseImpl.Case())
 	}
+}
+
+func (r *Reflector) getAndOneOfImpl(t reflect.Type) AndOneOf {
+	if r.InterfaceOverrides != nil {
+		override := r.InterfaceOverrides.GetInterfaceAndOneOf(t)
+		if override != nil {
+			return override
+		}
+	}
+	if t.Implements(andOneOfType) {
+		return reflect.New(t).Interface().(AndOneOf)
+	}
+	return nil
+}
+
+func (r *Reflector) getOneOfImpl(t reflect.Type) OneOf {
+	if r.InterfaceOverrides != nil {
+		override := r.InterfaceOverrides.GetInterfaceOneOf(t)
+		if override != nil {
+			return override
+		}
+	}
+	if t.Implements(oneOfType) {
+		return reflect.New(t).Interface().(OneOf)
+	}
+	return nil
+}
+
+func (r *Reflector) getIfThenElseImpl(t reflect.Type) IfThenElse {
+	if r.InterfaceOverrides != nil {
+		override := r.InterfaceOverrides.GetInterfaceIfThenElse(t)
+		if override != nil {
+			return override
+		}
+	}
+	if t.Implements(ifThenElseType) {
+		return reflect.New(t).Interface().(IfThenElse)
+	}
+	return nil
+}
+
+func (r *Reflector) getSchemaCaseImpl(t reflect.Type) SchemaCase {
+	if r.InterfaceOverrides != nil {
+		override := r.InterfaceOverrides.GetInterfaceSchemaCase(t)
+		if override != nil {
+			return override
+		}
+	}
+	if t.Implements(schemaCaseType) {
+		return reflect.New(t).Interface().(SchemaCase)
+	}
+	return nil
 }
 
 func (t *Type) structKeywordsFromTags(tags []string) {
