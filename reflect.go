@@ -37,8 +37,11 @@ type SchemaCondition struct {
 
 // SchemaSwitch holds data for emulating switch case over some field value
 type SchemaSwitch struct {
-	ByField string
-	Cases   map[string]interface{}
+	ClearProperties bool
+	AppendField     bool
+	ByField         string
+	Tag             string
+	Cases           map[string]interface{}
 }
 
 // Type represents a JSON Schema object type.
@@ -411,20 +414,39 @@ func (r *Reflector) reflectCondition(definitions Definitions, sc SchemaCondition
 	}
 }
 
-func (r *Reflector) reflectCases(definitions Definitions, sc SchemaSwitch) []*Type {
+func (r *Reflector) reflectCases(caseType *Type, definitions Definitions, sc SchemaSwitch) []*Type {
 	casesList := make([]*Type, 0)
-	for key, value := range sc.Cases {
-		t := &Type{}
-		t.If = &Type{
-			Properties: map[string]*Type{
-				sc.ByField: &Type{
-					Enum: []interface{}{key},
+	if len(sc.Cases) >= 1 {
+		possibleValues := make([]interface{}, 0)
+		for key, value := range sc.Cases {
+			possibleValues = append(possibleValues, key)
+			t := &Type{}
+			t.If = &Type{
+				Properties: map[string]*Type{
+					sc.ByField: &Type{
+						Enum: []interface{}{key},
+					},
 				},
-			},
+			}
+			t.Then = r.reflectTypeToSchema(definitions, reflect.TypeOf(value))
+			t.Else = t.If
+			casesList = append(casesList, t)
 		}
-		t.Then = r.reflectTypeToSchema(definitions, reflect.TypeOf(value))
-		t.Else = t.If
-		casesList = append(casesList, t)
+		if sc.ClearProperties {
+			caseType.Properties = make(map[string]*Type)
+		}
+		if sc.AppendField {
+			if caseType.Required == nil {
+				caseType.Required = make([]string, 0)
+			}
+			caseType.Required = append(caseType.Required, sc.ByField)
+			enumType := &Type{
+				Type: "string",
+				Enum: possibleValues,
+			}
+			enumType.structKeywordsFromTags(strings.Split(sc.Tag, ","))
+			caseType.Properties[sc.ByField] = enumType
+		}
 	}
 	return casesList
 }
@@ -462,7 +484,7 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, t ref
 	}
 
 	if schemaCaseImpl := r.getSchemaCaseImpl(t); schemaCaseImpl != nil {
-		st.OneOf = r.reflectCases(definitions, schemaCaseImpl.Case())
+		st.OneOf = r.reflectCases(st, definitions, schemaCaseImpl.Case())
 	}
 }
 
