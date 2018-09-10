@@ -460,7 +460,7 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, t ref
 		f := t.Field(i)
 		// anonymous and exported type should be processed recursively
 		// current type should inherit properties of anonymous one
-		if f.Anonymous && f.PkgPath == "" {
+		if f.Anonymous && f.PkgPath == "" && f.Type.Kind() == reflect.Struct {
 			r.reflectStructFields(st, definitions, f.Type)
 			continue
 		}
